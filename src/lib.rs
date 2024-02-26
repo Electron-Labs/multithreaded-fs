@@ -1,25 +1,28 @@
-use std::{collections::HashMap, fs, num::NonZeroUsize, os::unix::thread, sync::{Arc, Mutex}, time::Instant};
+pub mod types;
+
+use std::{collections::HashMap, fs, sync::{Arc, Mutex}, time::Instant};
 
 use serde::{Deserialize, Serialize};
+use types::ByteHandler;
 
-
-#[derive(Serialize, Deserialize)]
-struct Data {
+// Internal type which handles reading and writing data to and fro sub-files
+#[derive(Serialize, Deserialize, Clone)]
+struct DumpData {
     bytes: Vec<u8>,
 }
 
 // Read json data
-pub fn read_bytes_from_json(json_path: &str) -> Vec<u8> {
+pub fn read_bytes_from_json<T: Deserialize<'static> + ByteHandler>(json_path: &str) -> Vec<u8> {
     let json_data = fs::read_to_string(json_path).expect("Failed to read from file");
     
     // Deserialize json back to Vec<u8>
-    let deserialized_data: Data = serde_json::from_str(&json_data).expect("Failed to deserialize data");
-    deserialized_data.bytes
+    let deserialized_data: T = serde_json::from_str(&json_data).expect("Failed to deserialize data");
+    deserialized_data.get_bytes()
 }
 
 pub fn dump_bytes_to_json(bytes: Vec<u8>, json_path: &str) {
     // Serialize Vec<u8> to json
-    let serialized_data = serde_json::to_string(&Data {
+    let serialized_data = serde_json::to_string(&DumpData {
         bytes: bytes.clone(),
     })
     .expect("Failed to serialize data");
@@ -133,7 +136,7 @@ fn get_final_byte_vec(byte_split_map: Arc<Mutex<HashMap<usize, Vec<u8>>>>) -> Ve
 pub fn read_file(file_read_folder: String, file_base_name: String) -> Vec<u8> {
     let mut thrds = Vec::new();
     let no_of_split = count_files_in_folder(&file_read_folder, &file_base_name).unwrap();
-    let mut byte_split_map: Arc<Mutex<HashMap<usize, Vec<u8>>>> = Arc::new(Mutex::new(HashMap::new()));
+    let byte_split_map: Arc<Mutex<HashMap<usize, Vec<u8>>>> = Arc::new(Mutex::new(HashMap::new()));
     
     let time: Instant = Instant::now();
     for i in 0..no_of_split {

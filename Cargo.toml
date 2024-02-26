@@ -1,5 +1,5 @@
 [package]
-name = "byte-file-read"
+name = "multithreaded-fs"
 version = "0.1.0"
 edition = "2021"
 
