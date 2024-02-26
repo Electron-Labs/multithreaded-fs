@@ -1,4 +1,4 @@
-use std::{fs, num::NonZeroUsize, sync::{Arc, Mutex}, thread::available_parallelism, time::Instant};
+use std::{collections::HashMap, fs, num::NonZeroUsize, os::unix::thread, sync::{Arc, Mutex}, time::Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -8,9 +8,6 @@ struct Data {
     bytes: Vec<u8>,
 }
 
-fn get_no_avaiable_threads() -> NonZeroUsize {
-     available_parallelism().unwrap()
-}
 // Read json data
 pub fn read_bytes_from_json(json_path: &str) -> Vec<u8> {
     let json_data = fs::read_to_string(json_path).expect("Failed to read from file");
@@ -59,19 +56,29 @@ fn get_byte_split_vec(data: Vec<u8>, no_of_split: usize) -> Vec<Vec<u8>> {
     bytes_sub_vec
 }
 
+fn make_folder_if_not_exist(path: String, folder_name: String) {
+    // Construct the full path including the folder name
+    let full_path = format!("{}/{}", path, folder_name);
+
+    // Create the folder if it does not exist
+    if let Err(err) = fs::create_dir_all(&full_path) {
+        eprintln!("Error creating folder: {}", err);
+    } else {
+        println!("Folder created successfully at: {}", full_path);
+    }
+}
+
 fn dump_file_bytes_splits(bytes_split_vec: Vec<Vec<u8>>, file_bytes_split_destination: String, file_name: String) {
-    
-    let avaiable_threads = get_no_avaiable_threads();
-    let thread_count = std::cmp::min(bytes_split_vec.len(), avaiable_threads.into());
+    make_folder_if_not_exist(file_bytes_split_destination.clone(), file_name.clone());
+    let thread_count = bytes_split_vec.len();
     let mut thrds = Vec::new();
 
         // TODO: fix this 
     for i in 0..thread_count {
         let vec = bytes_split_vec.get(i).unwrap().clone();
-        let index = i; 
-        let path: String = format!("{file_bytes_split_destination}_{file_name}_{index}_{i}.json");
-        println!("dumping json  number {i}");
+        let path: String = format!("{file_bytes_split_destination}/{file_name}/{i}.json");
         thrds.push(
+            // TODO: reduce the stack size
             std::thread::Builder::new().stack_size(209715200).spawn(move || {
                 dump_bytes_to_json(vec, path.as_str())
             }).unwrap()
@@ -88,9 +95,10 @@ pub fn file_preprocess(file_read_path: String, file_bytes_split_destination: Str
     dump_file_bytes_splits(byte_split_vecs, file_bytes_split_destination, file_name)
 }
 
-fn count_files_in_folder(folder_path: &str) -> Result<usize, std::io::Error> {
+fn count_files_in_folder(folder_path: &str, file_name: &str) -> Result<usize, std::io::Error> {
     let mut file_count = 0;
-    let dir_entries = fs::read_dir(folder_path)?;
+    let full_path = format!("{folder_path}/{file_name}");
+    let dir_entries = fs::read_dir(full_path)?;
     for entry in dir_entries {
         let entry = entry?;
         let metadata = entry.metadata()?;
@@ -98,33 +106,45 @@ fn count_files_in_folder(folder_path: &str) -> Result<usize, std::io::Error> {
             file_count += 1;
         }
     }
+
+    println!("the file count is: {file_count}");
     Ok(file_count)
 }
 
+fn get_final_byte_vec(byte_split_map: Arc<Mutex<HashMap<usize, Vec<u8>>>>) -> Vec<u8> {
+    let mut result_vec: Vec<u8> = Vec::new();
+    let sorted_keys: Vec<_> = {
+        let map = byte_split_map.lock().unwrap();
+        let mut keys: Vec<_> = map.keys().cloned().collect();
+        keys.sort();
+        keys
+    };
+
+    for key in sorted_keys {
+        let map = byte_split_map.lock().unwrap();
+        if let Some(value) = map.get(&key) {
+            result_vec.extend_from_slice(&value);  
+        }
+    }
+    println!("final total len of final byte vec: {:?}", result_vec.len());
+    result_vec
+}
 
 pub fn read_file(file_read_folder: String, file_base_name: String) -> Vec<u8> {
     let mut thrds = Vec::new();
-    let no_of_split = count_files_in_folder(&file_read_folder).unwrap();
-    let available_threads = get_no_avaiable_threads();
-    let mut byte_split_vecs: Arc<Mutex<Vec<Vec<u8>>>> = Arc::new(Mutex::new(Vec::with_capacity(no_of_split)));
-    let time = Instant::now();
-    let thread_count = std::cmp::min(no_of_split, available_threads.into());
+    let no_of_split = count_files_in_folder(&file_read_folder, &file_base_name).unwrap();
+    let mut byte_split_map: Arc<Mutex<HashMap<usize, Vec<u8>>>> = Arc::new(Mutex::new(HashMap::new()));
     
-    for i in 0..thread_count {
-        let divided_vecs_clone = Arc::clone(&byte_split_vecs);
-        
-        
-        // TODO: fix these variable copying 
-        let index = i;
-        let file_read_folder1 =file_read_folder.clone();
-        let file_base_name1 = file_base_name.clone();
+    let time: Instant = Instant::now();
+    for i in 0..no_of_split {
+        let byte_split_map_clone = Arc::clone(&byte_split_map);
+
+        let file_read_path = format!("{file_read_folder}/{file_base_name}/{i}.json");
         thrds.push(
-            std::thread::Builder::new().stack_size(209715200).spawn(move || {
-                // TODO: change the path
-                let slice = read_bytes_from_json(format!("{}_{}_{index}.json", file_read_folder1, file_base_name1, index=index).as_str());
-                let mut guard = divided_vecs_clone.lock().unwrap();
-                // guard.push(slice);
-                guard[i] = slice;
+            std::thread::Builder::new().stack_size(209715200).spawn( move || {
+                let slice = read_bytes_from_json(&file_read_path);
+                let mut guard = byte_split_map_clone.lock().unwrap();
+                guard.insert(i, slice);
             }).unwrap()
         );  
     };
@@ -135,13 +155,8 @@ pub fn read_file(file_read_folder: String, file_base_name: String) -> Vec<u8> {
 
     let timetaken = time.elapsed().as_secs(); 
     println!("time takne to read file : {:?}", timetaken);
-    let mut result_vec: Vec<u8> = Vec::new();
-    let guard = byte_split_vecs.lock().unwrap();
-    for vec in guard.iter() {
-        result_vec.extend_from_slice(&vec);
-    }
-    println!("final total len after reading proof: {:?}", result_vec.len());
-    result_vec
+
+    get_final_byte_vec(byte_split_map)
 }
 
 
@@ -151,7 +166,14 @@ mod tests {
 
     #[test]
     fn it_works() {
-        file_preprocess(String::from("./json_data/json_file.json"), String::from("./preprocess"), 5, String::from("json_file"));
+        file_preprocess(String::from("./json_data/json_file.json"), String::from("./preprocess"), 10 , String::from("json_file"));
+        // assert_eq!(result, 4);
+    }
+
+    #[test]
+    fn read_file_test() {
+        let bytes = read_file(String::from("./preprocess"), String::from("json_file"));
+        println!("the file bytes are: {:?}", bytes);
         // assert_eq!(result, 4);
     }
 }
