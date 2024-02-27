@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use types::ByteHandler;
 
 // Internal type which handles reading and writing data to and fro sub-files
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 struct DumpData {
     bytes: Vec<u8>,
 }
@@ -174,13 +174,13 @@ mod tests {
     }
 
     #[test]
-    fn it_works() {
+    fn file_e2e_test() {
+        // preprocess and deconstruct file
         file_preprocess::<DumpData>(String::from("./json_data/json_file.json"), String::from("./preprocess"), 10 , String::from("json_file"));
-    }
-
-    #[test]
-    fn read_file_test() {
-        let bytes = read_file::<DumpData>(String::from("./preprocess"), String::from("json_file"));
-        println!("the file bytes are: {:?}", bytes);
+        // read deconstructed file into bytes
+        let data = read_file::<DumpData>(String::from("./preprocess"), String::from("json_file"));
+        // read original file into bytes
+        let original_bytes = read_bytes_from_json::<DumpData>(&String::from("./json_data/json_file.json"));
+        assert_eq!(data.bytes, original_bytes);
     }
 }
