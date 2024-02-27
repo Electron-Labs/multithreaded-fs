@@ -36,7 +36,7 @@ pub fn dump_bytes_to_json(bytes: &[u8], json_path: &str) {
 
 fn get_byte_split_length(total_byte_length: usize, split_count: usize) -> usize{
     // Accounts for total bytes that can be divided into a split_count number of splits
-    let split_length = (total_byte_length + split_count-1) / split_count;
+    let split_length = (total_byte_length) / split_count;
     split_length
 }
 
@@ -59,7 +59,7 @@ pub fn file_preprocess<T: Deserialize<'static> + ByteHandler>(file_read_path: St
 
     let base_len = get_byte_split_length(file_bytes.len(), no_of_file_split);
 
-    let extra = file_bytes.len()-(base_len*(no_of_file_split-1));
+    let extra = base_len + file_bytes.len()%no_of_file_split;
 
     make_folder_if_not_exist(&file_bytes_split_destination, &file_name);
     for i in 0..no_of_file_split-1 {
@@ -72,22 +72,12 @@ pub fn file_preprocess<T: Deserialize<'static> + ByteHandler>(file_read_path: St
         );
     }
     let path: String = format!("{file_bytes_split_destination}/{file_name}/{}.json", no_of_file_split-1);
-    if extra != 0 {
-        let last_chunk= file_bytes[(file_bytes.len()-extra)..].to_vec();
-        write_tasks.push(
-            std::thread::spawn(move || {
-                dump_bytes_to_json(&last_chunk, path.as_str())
-            })
-        )
-    } 
-    else {
-        let last_chunk= file_bytes[(file_bytes.len()-base_len)..].to_vec();
-        write_tasks.push(
-            std::thread::spawn(move || {
-                dump_bytes_to_json(&last_chunk, path.as_str())
-            })
-        )
-    }
+    let last_chunk= file_bytes[(file_bytes.len()-extra)..].to_vec();
+    write_tasks.push(
+        std::thread::spawn(move || {
+            dump_bytes_to_json(&last_chunk, path.as_str())
+        })
+    );
 
     for thrd in write_tasks {
         thrd.join().expect(&format!("Thread panicked"));
