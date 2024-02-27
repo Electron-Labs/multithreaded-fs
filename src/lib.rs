@@ -52,13 +52,10 @@ fn make_folder_if_not_exist(path: &str, folder_name: &str) {
     }
 }
 
-
-pub fn file_preprocess<T: Deserialize<'static> + ByteHandler>(file_read_path: String, file_bytes_split_destination: String, no_of_file_split: usize, file_name: String) {
-    let file_bytes: Vec<u8> = read_bytes_from_json::<T>(&file_read_path);
+pub fn process_file_bytes(file_bytes: &Vec<u8>, file_bytes_split_destination: String, no_of_file_split: usize, file_name: String) {
+    
     let mut write_tasks = Vec::new();
-
     let base_len = get_byte_split_length(file_bytes.len(), no_of_file_split);
-
     let extra = base_len + file_bytes.len()%no_of_file_split;
 
     make_folder_if_not_exist(&file_bytes_split_destination, &file_name);
@@ -82,6 +79,12 @@ pub fn file_preprocess<T: Deserialize<'static> + ByteHandler>(file_read_path: St
     for thrd in write_tasks {
         thrd.join().expect(&format!("Thread panicked"));
     }
+}
+
+
+pub fn file_preprocess<T: Deserialize<'static> + ByteHandler>(file_read_path: String, file_bytes_split_destination: String, no_of_file_split: usize, file_name: String) {
+    let file_bytes: Vec<u8> = read_bytes_from_json::<T>(&file_read_path);
+    process_file_bytes(&file_bytes, file_bytes_split_destination, no_of_file_split, file_name);
 }
 
 fn count_files_in_folder(folder_path: &str, file_name: &str) -> Result<usize, std::io::Error> {
@@ -166,7 +169,7 @@ mod tests {
     #[test]
     fn file_e2e_test() {
         // preprocess and deconstruct file
-        file_preprocess::<DumpData>(String::from("./json_data/json_file.json"), String::from("./preprocess"), 10 , String::from("json_file"));
+        file_preprocess::<DumpData>(String::from("./json_data/json_file.json"), String::from("./preprocess"), 13 , String::from("json_file"));
         // read deconstructed file into bytes
         let data = read_file::<DumpData>(String::from("./preprocess"), String::from("json_file"));
         // read original file into bytes
