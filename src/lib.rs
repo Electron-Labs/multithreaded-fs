@@ -11,27 +11,30 @@ struct DumpData {
     bytes: Vec<u8>,
 }
 
-fn string_to_static_str(s: String) -> &'static str {
-    Box::leak(s.into_boxed_str())
-}
+// fn string_to_static_str(s: String) -> &'static str {
+//     Box::leak(s.into_boxed_str())
+// }
 
 // Read json data
 pub fn read_bytes_from_json<T: Deserialize<'static> + ByteHandler>(json_path: &str) -> Vec<u8> {
+    let time = Instant::now();
     let json_data = fs::read_to_string(json_path).unwrap();
-    
     // Deserialize json back to Vec<u8>
-    let deserialized_data: T = serde_json::from_str(string_to_static_str(json_data)).expect("Failed to deserialize data");
-    deserialized_data.get_bytes()
+    let deserialized_data: DumpData = serde_json::from_str(&json_data).expect("Failed to deserialize data");
+    println!("time to one chunk of file : {:?}", time.elapsed());
+    deserialized_data.bytes
 }
 
-pub fn dump_bytes_to_json(bytes: &[u8], json_path: &str) {
+pub fn dump_bytes_to_json(bytes: &[u8], json_path: &str, i :usize) {
     // Serialize Vec<u8> to json
+    let time = Instant::now();
     let serialized_data = serde_json::to_string(&DumpData {
         bytes: bytes.to_vec(),
     })
     .expect("Failed to serialize data");
     // Write json to file
     fs::write(json_path, serialized_data).expect("Failed to write to file");
+    println!("time taken to dump {:?} th file data: {:?}", i, time.elapsed())
 }
 
 fn get_byte_split_length(total_byte_length: usize, split_count: usize) -> usize{
@@ -53,7 +56,7 @@ fn make_folder_if_not_exist(path: &str, folder_name: &str) {
 }
 
 pub fn process_file_bytes(file_bytes: &Vec<u8>, file_bytes_split_destination: String, no_of_file_split: usize, file_name: String) {
-    
+    println!("preprocess file byte func start");
     let mut write_tasks = Vec::new();
     let base_len = get_byte_split_length(file_bytes.len(), no_of_file_split);
     let extra = base_len + file_bytes.len()%no_of_file_split;
@@ -64,7 +67,7 @@ pub fn process_file_bytes(file_bytes: &Vec<u8>, file_bytes_split_destination: St
         let chunk = file_bytes[(i*base_len)..((i+1)*base_len)].to_vec();
         write_tasks.push(
             std::thread::spawn(move || {
-                dump_bytes_to_json(&chunk, path.as_str())
+                dump_bytes_to_json(&chunk, path.as_str(), i)
             })
         );
     }
@@ -72,7 +75,7 @@ pub fn process_file_bytes(file_bytes: &Vec<u8>, file_bytes_split_destination: St
     let last_chunk= file_bytes[(file_bytes.len()-extra)..].to_vec();
     write_tasks.push(
         std::thread::spawn(move || {
-            dump_bytes_to_json(&last_chunk, path.as_str())
+            dump_bytes_to_json(&last_chunk, path.as_str(), no_of_file_split-1)
         })
     );
 
@@ -115,7 +118,7 @@ fn get_final_byte_vec(byte_split_map: Arc<Mutex<HashMap<usize, Vec<u8>>>>) -> Ve
     for key in sorted_keys {
         let map = byte_split_map.lock().unwrap();
         if let Some(value) = map.get(&key) {
-            result_vec.extend_from_slice(&value);  
+            result_vec.extend_from_slice(&value); 
         }
     }
     println!("final total len of final byte vec: {:?}", result_vec.len());
