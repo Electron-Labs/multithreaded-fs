@@ -11,12 +11,7 @@ struct DumpData {
     bytes: Vec<u8>,
 }
 
-// fn string_to_static_str(s: String) -> &'static str {
-//     Box::leak(s.into_boxed_str())
-// }
-
-// Read json data
-pub fn read_bytes_from_json<T: Deserialize<'static> + ByteHandler>(json_path: &str) -> Vec<u8> {
+pub fn read_bytes_from_json(json_path: &str) -> Vec<u8> {
     let time = Instant::now();
     let json_data = fs::read_to_string(json_path).unwrap();
     // Deserialize json back to Vec<u8>
@@ -85,8 +80,8 @@ pub fn process_file_bytes(file_bytes: &Vec<u8>, file_bytes_split_destination: St
 }
 
 
-pub fn file_preprocess<T: Deserialize<'static> + ByteHandler>(file_read_path: String, file_bytes_split_destination: String, no_of_file_split: usize, file_name: String) {
-    let file_bytes: Vec<u8> = read_bytes_from_json::<T>(&file_read_path);
+pub fn file_preprocess<T: ByteHandler>(file_read_path: String, file_bytes_split_destination: String, no_of_file_split: usize, file_name: String) {
+    let file_bytes: Vec<u8> = read_bytes_from_json(&file_read_path);
     process_file_bytes(&file_bytes, file_bytes_split_destination, no_of_file_split, file_name);
 }
 
@@ -126,7 +121,7 @@ fn get_final_byte_vec(byte_split_map: Arc<Mutex<HashMap<usize, Vec<u8>>>>) -> Ve
 }
 
 
-pub fn read_file<T:  Deserialize<'static> + ByteHandler>(file_read_folder: String, file_name: String) -> T {
+pub fn read_file<T: ByteHandler>(file_read_folder: String, file_name: String) -> T {
     let mut thrds = Vec::new();
     let no_of_split = count_files_in_folder(&file_read_folder, &file_name).unwrap();
     let byte_split_map: Arc<Mutex<HashMap<usize, Vec<u8>>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -136,7 +131,7 @@ pub fn read_file<T:  Deserialize<'static> + ByteHandler>(file_read_folder: Strin
         let file_read_path = format!("{file_read_folder}/{file_name}/{i}.json");
         thrds.push(
             std::thread::Builder::new().spawn(move || {
-                let slice  = read_bytes_from_json::<T>(&file_read_path);
+                let slice  = read_bytes_from_json(&file_read_path);
                 let mut guard = byte_split_map_clone.lock().unwrap();
                 guard.insert(i, slice);
             }).unwrap()
@@ -176,7 +171,7 @@ mod tests {
         // read deconstructed file into bytes
         let data = read_file::<DumpData>(String::from("./preprocess"), String::from("json_file"));
         // read original file into bytes
-        let original_bytes = read_bytes_from_json::<DumpData>(&String::from("./json_data/json_file.json"));
+        let original_bytes = read_bytes_from_json(&String::from("./json_data/json_file.json"));
         assert_eq!(data.bytes, original_bytes);
     }
 }
