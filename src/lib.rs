@@ -3,6 +3,7 @@ pub mod types;
 use std::{collections::HashMap, fs, sync::{Arc, Mutex}, time::Instant};
 
 use serde::{Deserialize, Serialize};
+use tracing::{error, info};
 use types::ByteHandler;
 use std::path::Path;
 
@@ -18,7 +19,7 @@ pub fn read_bytes_from_json(json_path: &str) -> Vec<u8> {
     let json_data = fs::read_to_string(json_path).unwrap();
     // Deserialize json back to Vec<u8>
     let deserialized_data: DumpData = serde_json::from_str(&json_data).expect("Failed to deserialize data");
-    println!("time to one chunk of file : {:?}", time.elapsed());
+    info!("time taken to deserialize one chunk of file : {:?}", time.elapsed());
     deserialized_data.bytes
 }
 
@@ -31,7 +32,7 @@ pub fn dump_bytes_to_json(bytes: &[u8], json_path: &str, i :usize) {
     .expect("Failed to serialize data");
     // Write json to file
     fs::write(json_path, serialized_data).expect("Failed to write to file");
-    println!("time taken to dump {:?} th file data: {:?}", i, time.elapsed())
+    info!("time taken to dump {:?} th file data: {:?}", i, time.elapsed());
 }
 
 fn get_byte_split_length(total_byte_length: usize, split_count: usize) -> usize{
@@ -46,9 +47,9 @@ fn make_folder_if_not_exist(path: &str, folder_name: &str) {
 
     // Create the folder if it does not exist
     if let Err(err) = fs::create_dir_all(&full_path) {
-        eprintln!("Error creating folder: {}", err);
+        error!("Error creating folder: {}", err);
     } else {
-        println!("Folder created successfully at: {}", full_path);
+        info!("Folder created successfully at: {}", full_path);
     }
 }
 
@@ -62,13 +63,12 @@ fn get_file_name_from_path(path: &str) -> &str {
 }
 
 pub fn process_file_bytes(file_bytes: &Vec<u8>, file_read_path: String, file_bytes_split_destination: String, no_of_file_split: usize) {
-    println!("preprocess file byte func start");
+    info!("preprocess file byte func start");
     let mut write_tasks = Vec::new();
     let base_len = get_byte_split_length(file_bytes.len(), no_of_file_split);
     let extra = base_len + file_bytes.len()%no_of_file_split;
 
     let file_name = get_file_name_from_path(&file_read_path);
-    println!("file name is :{:?}", file_name);
     make_folder_if_not_exist(&file_bytes_split_destination, &file_name);
     for i in 0..no_of_file_split-1 {
         let path: String = format!("{file_bytes_split_destination}/{file_name}/{i}.json");
@@ -109,8 +109,7 @@ fn count_files_in_folder(folder_path: &str, file_name: &str) -> Result<usize, st
             file_count += 1;
         }
     }
-
-    println!("the file count is: {file_count}");
+    info!("the file count is: {file_count}");
     Ok(file_count)
 }
 
@@ -129,7 +128,7 @@ fn get_final_byte_vec(byte_split_map: Arc<Mutex<HashMap<usize, Vec<u8>>>>) -> Ve
             result_vec.extend_from_slice(&value); 
         }
     }
-    println!("final total len of final byte vec: {:?}", result_vec.len());
+    info!("final total len of final byte vec: {:?}", result_vec.len());
     result_vec
 }
 
@@ -156,7 +155,7 @@ pub fn read_file<T: ByteHandler>(file_read_folder: String, file_name: String) ->
     }
 
     let timetaken = time.elapsed().as_secs(); 
-    println!("time takne to read file : {:?}", timetaken);
+    info!("time takne to read file : {:?}", timetaken);
 
    
     let res = T::from_bytes(get_final_byte_vec(byte_split_map));
@@ -166,6 +165,7 @@ pub fn read_file<T: ByteHandler>(file_read_folder: String, file_name: String) ->
 
 #[cfg(test)]
 mod tests {
+    use tracing_test::traced_test;
     use super::*;
     impl ByteHandler for DumpData{
         fn get_bytes(&self) -> Vec<u8> {
@@ -177,6 +177,7 @@ mod tests {
         }
     }
 
+    #[traced_test]
     #[test]
     fn file_e2e_test() {
         // preprocess and deconstruct file
