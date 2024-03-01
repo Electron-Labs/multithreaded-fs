@@ -62,13 +62,13 @@ fn get_file_name_from_path(path: &str) -> &str {
     file_name_without_extension
 }
 
-pub fn process_file_bytes(file_bytes: &Vec<u8>, file_read_path: String, file_bytes_split_destination: String, no_of_file_split: usize) {
+pub fn process_file_bytes(file_bytes: &Vec<u8>, file_bytes_split_destination: String, file_name_with_extension: &str, no_of_file_split: usize) {
     info!("preprocess file byte func start");
     let mut write_tasks = Vec::new();
     let base_len = get_byte_split_length(file_bytes.len(), no_of_file_split);
     let extra = base_len + file_bytes.len()%no_of_file_split;
 
-    let file_name = get_file_name_from_path(&file_read_path);
+    let file_name = get_file_name_from_path(file_name_with_extension);
     make_folder_if_not_exist(&file_bytes_split_destination, &file_name);
     for i in 0..no_of_file_split-1 {
         let path: String = format!("{file_bytes_split_destination}/{file_name}/{i}.json");
@@ -92,10 +92,16 @@ pub fn process_file_bytes(file_bytes: &Vec<u8>, file_read_path: String, file_byt
     }
 }
 
+fn get_file_name_with_extension(path: &str) -> String {
+    let file_path = Path::new(path);
+    file_path.file_name().unwrap().to_str().map(String::from).unwrap()
+}
+
 
 pub fn file_preprocess<T: ByteHandler>(file_read_path: String, file_bytes_split_destination: String, no_of_file_split: usize) {
     let file_bytes: Vec<u8> = read_bytes_from_json(&file_read_path);
-    process_file_bytes(&file_bytes, file_read_path, file_bytes_split_destination, no_of_file_split);
+    let file_name = get_file_name_with_extension(&file_read_path);
+    process_file_bytes(&file_bytes, file_bytes_split_destination, &file_name, no_of_file_split);
 }
 
 fn count_files_in_folder(folder_path: &str, file_name: &str) -> Result<usize, std::io::Error> {
