@@ -1,6 +1,6 @@
 pub mod types;
 
-use std::{collections::HashMap, fs, sync::{Arc, Mutex}, time::Instant};
+use std::{collections::HashMap, fs::{self}, sync::{Arc, Mutex}, time::Instant};
 
 use serde::{Deserialize, Serialize};
 use tracing::{error, info};
@@ -23,15 +23,16 @@ pub fn read_bytes_from_json(json_path: &str) -> Vec<u8> {
     deserialized_data.bytes
 }
 
-pub fn dump_bytes_to_json(bytes: &[u8], json_path: &str, i :usize) {
-    // Serialize Vec<u8> to json
+pub fn read_bytes(file_path: &str) -> Vec<u8> {
     let time = Instant::now();
-    let serialized_data = serde_json::to_string(&DumpData {
-        bytes: bytes.to_vec(),
-    })
-    .expect("Failed to serialize data");
-    // Write json to file
-    fs::write(json_path, serialized_data).expect("Failed to write to file");
+    let bytes = fs::read(file_path).unwrap();
+    info!("time taken to read one chunk of file : {:?}", time.elapsed());
+    bytes
+}
+
+pub fn dump_bytes(bytes: &[u8], path: &str, i :usize) {
+    let time = Instant::now();
+    std::fs::write(path, bytes).unwrap();
     info!("time taken to dump {:?} th file data: {:?}", i, time.elapsed());
 }
 
@@ -71,19 +72,19 @@ pub fn process_file_bytes(file_bytes: &Vec<u8>, file_bytes_split_destination: St
     let file_name = get_file_name_from_path(file_name_with_extension);
     make_folder_if_not_exist(&file_bytes_split_destination, &file_name);
     for i in 0..no_of_file_split-1 {
-        let path: String = format!("{file_bytes_split_destination}/{file_name}/{i}.json");
+        let path: String = format!("{file_bytes_split_destination}/{file_name}/{i}");
         let chunk = file_bytes[(i*base_len)..((i+1)*base_len)].to_vec();
         write_tasks.push(
             std::thread::spawn(move || {
-                dump_bytes_to_json(&chunk, path.as_str(), i)
+                dump_bytes(&chunk, path.as_str(), i)
             })
         );
     }
-    let path: String = format!("{file_bytes_split_destination}/{file_name}/{}.json", no_of_file_split-1);
+    let path: String = format!("{file_bytes_split_destination}/{file_name}/{}", no_of_file_split-1);
     let last_chunk= file_bytes[(file_bytes.len()-extra)..].to_vec();
     write_tasks.push(
         std::thread::spawn(move || {
-            dump_bytes_to_json(&last_chunk, path.as_str(), no_of_file_split-1)
+            dump_bytes(&last_chunk, path.as_str(), no_of_file_split-1)
         })
     );
 
@@ -146,10 +147,10 @@ pub fn read_file<T: ByteHandler>(file_read_folder: String, file_name: String) ->
     let time: Instant = Instant::now();
     for i in 0..no_of_split {
         let byte_split_map_clone = Arc::clone(&byte_split_map);
-        let file_read_path = format!("{file_read_folder}/{file_name}/{i}.json");
+        let file_read_path = format!("{file_read_folder}/{file_name}/{i}");
         thrds.push(
             std::thread::Builder::new().spawn(move || {
-                let slice  = read_bytes_from_json(&file_read_path);
+                let slice  = read_bytes(&file_read_path);
                 let mut guard = byte_split_map_clone.lock().unwrap();
                 guard.insert(i, slice);
             }).unwrap()
